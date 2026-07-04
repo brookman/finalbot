@@ -41,7 +41,7 @@ where
     let main_loop = MainLoopBox::new(None)?;
     let main_loop: &'static MainLoop = Box::leak(Box::new(main_loop));
     if MAIN_LOOP.set(main_loop).is_err() {
-        eprintln!("MAIN_LOOP already set — continuing");
+        tracing::warn!("MAIN_LOOP already set — continuing");
     }
 
     ctrlc::set_handler(move || {
@@ -88,12 +88,12 @@ where
             }
 
             if let Err(e) = user_data.format.parse(param) {
-                eprintln!("Failed to parse video format: {e}");
+                tracing::error!("Failed to parse video format: {e}");
                 return;
             }
 
             let size = user_data.format.size();
-            eprintln!(
+            tracing::info!(
                 "format={:?}, size={}x{}",
                 user_data.format.format(),
                 size.width,

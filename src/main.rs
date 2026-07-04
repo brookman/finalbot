@@ -18,6 +18,13 @@ use pixel::BufferContext;
 
 #[tokio::main]
 async fn main() -> Result<()> {
+    tracing_subscriber::fmt()
+        .with_env_filter(
+            tracing_subscriber::EnvFilter::builder()
+                .with_default_directive(tracing::Level::INFO.into())
+                .from_env_lossy(),
+        )
+        .init();
     let sample_x = std::env::args()
         .nth(1)
         .and_then(|s| s.parse().ok())
@@ -30,17 +37,16 @@ async fn main() -> Result<()> {
     let (stream, fd) = portal::open_portal().await?;
     let node_id = stream.pipe_wire_node_id();
 
-    eprintln!("PipeWire node id: {node_id}");
-    pipewire::start(
-        node_id,
-        fd,
-        move |ctx: &BufferContext, bytes: &[u8]| match ctx.sample_pixel(bytes, sample_x, sample_y) {
-            Some(pixel) => println!(
+    tracing::info!("PipeWire node id: {node_id}");
+    pipewire::start(node_id, fd, move |ctx: &BufferContext, bytes: &[u8]| {
+        if let Some(pixel) = ctx.sample_pixel(bytes, sample_x, sample_y) {
+            println!(
                 "rgba({}, {}, {}, {})",
                 pixel[0], pixel[1], pixel[2], pixel[3]
-            ),
-            None => eprintln!("could not sample pixel"),
-        },
-    )?;
+            );
+        } else {
+            tracing::warn!("could not sample pixel at ({sample_x}, {sample_y})");
+        }
+    })?;
     Ok(())
 }
