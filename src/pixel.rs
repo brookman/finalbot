@@ -5,8 +5,8 @@ use pipewire::spa::param::video::VideoFormat;
 pub struct BufferContext {
     pub offset: usize,
     pub stride: i32,
-    pub width: usize,
-    pub height: usize,
+    pub width: u32,
+    pub height: u32,
     pub format: VideoFormat,
 }
 
@@ -21,11 +21,10 @@ impl BufferContext {
         let row_stride = if self.stride == 0 {
             self.width * bpp
         } else {
-            self.stride.unsigned_abs() as usize
+            self.stride.unsigned_abs()
         };
 
-        #[allow(clippy::cast_possible_truncation)]
-        let mut img = RgbaImage::new(self.width as u32, self.height as u32);
+        let mut img = RgbaImage::new(self.width, self.height);
 
         for y in 0..self.height {
             let src_y = if self.stride < 0 {
@@ -33,12 +32,11 @@ impl BufferContext {
             } else {
                 y
             };
-            let row_start = self.offset + src_y * row_stride;
+            let row_start = self.offset + src_y as usize * row_stride as usize;
 
-            #[allow(clippy::cast_possible_truncation)]
             for x in 0..self.width {
-                let src_idx = row_start + x * bpp;
-                if src_idx + bpp > bytes.len() {
+                let src_idx = row_start + x as usize * bpp as usize;
+                if src_idx + bpp as usize > bytes.len() {
                     return None;
                 }
                 let pixel = match self.format {
@@ -56,7 +54,7 @@ impl BufferContext {
                     }
                     _ => unreachable!(),
                 };
-                img.put_pixel(x as u32, y as u32, pixel);
+                img.put_pixel(x, y, pixel);
             }
         }
 

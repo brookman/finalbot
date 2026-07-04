@@ -1,12 +1,12 @@
 use std::os::fd::OwnedFd;
 
-use anyhow::{anyhow, Result};
+use anyhow::{Result, anyhow};
 use ashpd::desktop::{
+    CreateSessionOptions, PersistMode,
     screencast::{
         CursorMode, OpenPipeWireRemoteOptions, Screencast, SelectSourcesOptions, SourceType,
         StartCastOptions, Stream as ScreencastStream,
-    }, CreateSessionOptions,
-    PersistMode,
+    },
 };
 
 pub async fn open_portal() -> Result<(ScreencastStream, OwnedFd)> {

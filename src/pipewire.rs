@@ -1,7 +1,7 @@
 use std::os::fd::OwnedFd;
 use std::sync::OnceLock;
 
-use anyhow::{anyhow, Result};
+use anyhow::{Result, anyhow};
 use pipewire::{
     context::ContextBox,
     keys,
@@ -9,12 +9,12 @@ use pipewire::{
     properties::properties,
     spa,
     spa::param::{
+        ParamType,
         format::{FormatProperties, MediaSubtype, MediaType},
         format_utils,
         video::{VideoFormat, VideoInfoRaw},
-        ParamType,
     },
-    spa::pod::{serialize::PodSerializer, Pod, Value},
+    spa::pod::{Pod, Value, serialize::PodSerializer},
     spa::utils::Direction,
     stream::{StreamBox, StreamFlags},
 };
@@ -116,11 +116,10 @@ pub fn start(node_id: u32, fd: OwnedFd, sample_x: u32, sample_y: u32) -> Result<
             let ctx = BufferContext {
                 offset,
                 stride,
-                width: user_data.format.size().width as usize,
-                height: user_data.format.size().height as usize,
+                width: user_data.format.size().width,
+                height: user_data.format.size().height,
                 format: user_data.format.format(),
             };
-
 
             if let Some(img) = ctx.to_rgba_image(bytes) {
                 let pixel = img.get_pixel(sample_x, sample_y);
