@@ -2,8 +2,7 @@
 //!
 //! Opens a screencast portal via [`portal::open_portal`], connects a `PipeWire`
 //! stream via [`pipewire::start`], and prints the RGBA value of a single
-//! pixel from every received frame. The pixel coordinates are read from
-//! `argv[1]` and `argv[2]` (defaults 100 each).
+//! pixel from every received frame.
 
 // `u32 as usize` is lossless on all real targets but clippy's
 // `cast_lossless` can't express it (no `From<u32>` impl for `usize`).
@@ -14,7 +13,19 @@ mod pixel;
 mod portal;
 
 use anyhow::Result;
+use clap::Parser;
 use pixel::BufferContext;
+
+#[derive(Parser)]
+#[command(version, about)]
+struct Args {
+    /// X coordinate of the pixel to sample
+    #[arg(default_value = "100")]
+    x: u32,
+    /// Y coordinate of the pixel to sample
+    #[arg(default_value = "100")]
+    y: u32,
+}
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -25,14 +36,10 @@ async fn main() -> Result<()> {
                 .from_env_lossy(),
         )
         .init();
-    let sample_x = std::env::args()
-        .nth(1)
-        .and_then(|s| s.parse().ok())
-        .unwrap_or(100);
-    let sample_y = std::env::args()
-        .nth(2)
-        .and_then(|s| s.parse().ok())
-        .unwrap_or(100);
+
+    let args = Args::parse();
+    let sample_x = args.x;
+    let sample_y = args.y;
 
     let (stream, fd) = portal::open_portal().await?;
     let node_id = stream.pipe_wire_node_id();

@@ -24,6 +24,7 @@ unnecessary_self_imports = "warn"
 
 [dependencies]
 anyhow = "1"
+clap = { version = "4", features = ["derive"] }
 ashpd = { version = "0.13", features = ["screencast", "pipewire"] }
 ctrlc = "3"
 image = "0.25"
