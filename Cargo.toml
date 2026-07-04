@@ -4,3 +4,7 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
+ashpd = "0.13.12"
+evdevil = "0.5.0"
+image = "0.25.10"
+pipewire = "0.10.0"
