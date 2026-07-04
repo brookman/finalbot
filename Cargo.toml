@@ -2,10 +2,54 @@
 name = "finalbot"
 version = "0.1.0"
 edition = "2024"
+description = "PipeWire screen capture pixel sampler"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/anomalyco/finalbot"
+readme = "README.md"
+keywords = ["pipewire", "screencast", "pixel", "sampler"]
+categories = ["multimedia::video"]
+
+[lints.clippy]
+pedantic = { level = "warn", priority = -1 }
+cargo = { level = "warn", priority = -1 }
+
+# transitive dependency duplicates are unavoidable
+multiple_crate_versions = "allow"
+
+# individual strict lints beyond group defaults
+cast_lossless = "warn"
+cast_possible_truncation = "warn"
+cast_sign_loss = "warn"
+cast_precision_loss = "warn"
+doc_markdown = "warn"
+empty_structs_with_brackets = "warn"
+large_enum_variant = "warn"
+linkedlist = "warn"
+manual_let_else = "warn"
+manual_rem_euclid = "warn"
+manual_retain = "warn"
+manual_string_new = "warn"
+map_unwrap_or = "warn"
+match_wildcard_for_single_variants = "warn"
+missing_const_for_fn = "warn"
+missing_errors_doc = "warn"
+missing_panics_doc = "warn"
+module_name_repetitions = "warn"
+option_if_let_else = "warn"
+ref_patterns = "warn"
+semicolon_if_nothing_returned = "warn"
+str_to_string = "warn"
+trivially_copy_pass_by_ref = "warn"
+unnecessary_join = "warn"
+unnecessary_self_imports = "warn"
+unnecessary_wraps = "warn"
+unused_async = "warn"
+unused_self = "warn"
 
 [dependencies]
 anyhow = "1"
 ashpd = { version = "0.13", features = ["screencast", "pipewire"] }
+ctrlc = "3"
 evdevil = "0.5.0"
 image = "0.25.10"
 pipewire = "0.9"
