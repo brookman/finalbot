@@ -1,12 +1,12 @@
 //! `PipeWire` stream setup, format negotiation, and main-loop signal handling.
 //!
 //! [`start`] opens a `PipeWire` stream connected to the given screencast node
-//! and samples a single pixel on every incoming buffer.
+//! and calls a user-supplied callback on every incoming buffer.
 
 use std::os::fd::OwnedFd;
 use std::sync::OnceLock;
 
-use anyhow::{anyhow, Result};
+use anyhow::{Result, anyhow};
 use pipewire::{
     context::ContextBox,
     keys,
@@ -14,12 +14,12 @@ use pipewire::{
     properties::properties,
     spa,
     spa::param::{
+        ParamType,
         format::{FormatProperties, MediaSubtype, MediaType},
         format_utils,
         video::{VideoFormat, VideoInfoRaw},
-        ParamType,
     },
-    spa::pod::{serialize::PodSerializer, Pod, Value},
+    spa::pod::{Pod, Value, serialize::PodSerializer},
     spa::utils::Direction,
     stream::{StreamBox, StreamFlags},
 };
@@ -32,7 +32,10 @@ struct UserData {
     format: VideoInfoRaw,
 }
 
-pub fn start(node_id: u32, fd: OwnedFd, sample_x: u32, sample_y: u32) -> Result<()> {
+pub fn start<F>(node_id: u32, fd: OwnedFd, mut on_frame: F) -> Result<()>
+where
+    F: FnMut(&BufferContext, &[u8]) + 'static,
+{
     pipewire::init();
 
     let main_loop = MainLoopBox::new(None)?;
@@ -128,13 +131,7 @@ pub fn start(node_id: u32, fd: OwnedFd, sample_x: u32, sample_y: u32) -> Result<
                 format: user_data.format.format(),
             };
 
-            match ctx.sample_pixel(bytes, sample_x, sample_y) {
-                Some(pixel) => println!(
-                    "rgba({}, {}, {}, {})",
-                    pixel[0], pixel[1], pixel[2], pixel[3]
-                ),
-                None => eprintln!("could not sample pixel"),
-            }
+            on_frame(&ctx, bytes);
         })
         .register()?;
 
