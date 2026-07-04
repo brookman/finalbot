@@ -8,52 +8,47 @@
 // `cast_lossless` can't express it (no `From<u32>` impl for `usize`).
 #![allow(clippy::cast_lossless)]
 
+mod args;
 mod pipewire;
 mod pixel;
 mod portal;
 
-use anyhow::Result;
+use crate::args::Args;
+use anyhow::{Context, Result};
 use clap::Parser;
 use pixel::BufferContext;
-
-#[derive(Parser)]
-#[command(version, about)]
-struct Args {
-    /// X coordinate of the pixel to sample
-    #[arg(default_value = "100")]
-    x: u32,
-    /// Y coordinate of the pixel to sample
-    #[arg(default_value = "100")]
-    y: u32,
-}
+use tracing::{Level, info, warn};
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    tracing_subscriber::fmt()
-        .with_env_filter(
-            tracing_subscriber::EnvFilter::builder()
-                .with_default_directive(tracing::Level::INFO.into())
-                .from_env_lossy(),
-        )
-        .init();
-
-    let args = Args::parse();
-    let sample_x = args.x;
-    let sample_y = args.y;
+    let (x, y) = init(Level::INFO)?.coordinates();
 
     let (stream, fd) = portal::open_portal().await?;
     let node_id = stream.pipe_wire_node_id();
+    info!("PipeWire node id: {node_id}");
 
-    tracing::info!("PipeWire node id: {node_id}");
     pipewire::start(node_id, fd, move |ctx: &BufferContext, bytes: &[u8]| {
-        if let Some(pixel) = ctx.sample_pixel(bytes, sample_x, sample_y) {
-            println!(
+        if let Some(pixel) = ctx.sample_pixel(bytes, x, y) {
+            info!(
                 "rgba({}, {}, {}, {})",
                 pixel[0], pixel[1], pixel[2], pixel[3]
             );
         } else {
-            tracing::warn!("could not sample pixel at ({sample_x}, {sample_y})");
+            warn!("could not sample pixel at ({x}, {y})");
         }
     })?;
+
     Ok(())
+}
+
+fn init(log_level: Level) -> Result<Args> {
+    tracing_subscriber::fmt()
+        .with_env_filter(
+            tracing_subscriber::EnvFilter::builder()
+                .with_default_directive(log_level.into())
+                .from_env_lossy(),
+        )
+        .init();
+
+    Args::try_parse().context("Could not parse args")
 }

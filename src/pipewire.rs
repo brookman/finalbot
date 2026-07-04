@@ -6,6 +6,7 @@
 use std::os::fd::OwnedFd;
 use std::sync::OnceLock;
 
+use crate::pixel::BufferContext;
 use anyhow::{Result, anyhow};
 use pipewire::{
     context::ContextBox,
@@ -23,8 +24,7 @@ use pipewire::{
     spa::utils::Direction,
     stream::{StreamBox, StreamFlags},
 };
-
-use crate::pixel::BufferContext;
+use tracing::{error, info, warn};
 
 static MAIN_LOOP: OnceLock<&'static MainLoop> = OnceLock::new();
 
@@ -41,7 +41,7 @@ where
     let main_loop = MainLoopBox::new(None)?;
     let main_loop: &'static MainLoop = Box::leak(Box::new(main_loop));
     if MAIN_LOOP.set(main_loop).is_err() {
-        tracing::warn!("MAIN_LOOP already set — continuing");
+        warn!("MAIN_LOOP already set — continuing");
     }
 
     ctrlc::set_handler(move || {
@@ -88,12 +88,12 @@ where
             }
 
             if let Err(e) = user_data.format.parse(param) {
-                tracing::error!("Failed to parse video format: {e}");
+                error!("Failed to parse video format: {e}");
                 return;
             }
 
             let size = user_data.format.size();
-            tracing::info!(
+            info!(
                 "format={:?}, size={}x{}",
                 user_data.format.format(),
                 size.width,
