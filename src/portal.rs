@@ -1,3 +1,8 @@
+//! XDG Desktop Portal screencast session.
+//!
+//! [`open_portal`] requests a `PipeWire` node from the portal and returns
+//! the node ID together with an `OwnedFd` for the `PipeWire` connection.
+
 use std::os::fd::OwnedFd;
 
 use anyhow::{Result, anyhow};

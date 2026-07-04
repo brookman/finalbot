@@ -1,6 +1,13 @@
-use image::RgbaImage;
+//! Conversion of `PipeWire` raw video buffers into image crate types.
+//!
+//! [`BufferContext`] describes the layout of a raw video frame.
+//! Use [`sample_pixel`](BufferContext::sample_pixel) to read a single pixel
+//! without copying, or [`to_rgba_image`](BufferContext::to_rgba_image) to
+//! produce a full [`RgbaImage`].
+
 use pipewire::spa::param::video::VideoFormat;
 
+/// Layout of a raw `PipeWire` video buffer.
 #[derive(Clone, Debug)]
 pub struct BufferContext {
     pub offset: usize,
@@ -11,60 +18,58 @@ pub struct BufferContext {
 }
 
 impl BufferContext {
-    pub fn to_rgba_image(&self, bytes: &[u8]) -> Option<RgbaImage> {
-        let bpp = match self.format {
-            VideoFormat::RGB => 3,
-            VideoFormat::RGBA | VideoFormat::RGBx | VideoFormat::BGRx => 4,
-            _ => return None,
-        };
+    /// Number of bytes per pixel for the current format.
+    fn bytes_per_pixel(&self) -> Option<u32> {
+        match self.format {
+            VideoFormat::RGB => Some(3),
+            VideoFormat::RGBA | VideoFormat::RGBx | VideoFormat::BGRx => Some(4),
+            _ => None,
+        }
+    }
 
-        let row_stride = if self.stride == 0 {
+    /// Byte stride between consecutive rows.
+    fn row_stride(&self, bpp: u32) -> u32 {
+        if self.stride == 0 {
             self.width * bpp
         } else {
             self.stride.unsigned_abs()
-        };
+        }
+    }
 
-        let mut img = RgbaImage::new(self.width, self.height);
+    /// Source buffer row index for logical row `y`.
+    fn src_row(&self, y: u32) -> usize {
+        if self.stride < 0 {
+            (self.height - 1 - y) as usize
+        } else {
+            y as usize
+        }
+    }
 
-        for y in 0..self.height {
-            let src_y = if self.stride < 0 {
-                self.height - 1 - y
-            } else {
-                y
-            };
-            let row_start = self.offset + src_y as usize * row_stride as usize;
-
-            for x in 0..self.width {
-                let src_idx = row_start + x as usize * bpp as usize;
-                if src_idx + bpp as usize > bytes.len() {
-                    return None;
-                }
-                let pixel = match self.format {
-                    VideoFormat::RGB | VideoFormat::RGBx => {
-                        image::Rgba([bytes[src_idx], bytes[src_idx + 1], bytes[src_idx + 2], 255])
-                    }
-                    VideoFormat::RGBA => image::Rgba([
-                        bytes[src_idx],
-                        bytes[src_idx + 1],
-                        bytes[src_idx + 2],
-                        bytes[src_idx + 3],
-                    ]),
-                    VideoFormat::BGRx => {
-                        image::Rgba([bytes[src_idx + 2], bytes[src_idx + 1], bytes[src_idx], 255])
-                    }
-                    _ => unreachable!(),
-                };
-                img.put_pixel(x, y, pixel);
-            }
+    /// Read a single pixel without copying the entire buffer.
+    pub fn sample_pixel(&self, bytes: &[u8], x: u32, y: u32) -> Option<image::Rgba<u8>> {
+        if x >= self.width || y >= self.height {
+            return None;
         }
 
-        Some(img)
+        let bpp = self.bytes_per_pixel()?;
+        let idx = self.offset
+            + self.src_row(y) * self.row_stride(bpp) as usize
+            + x as usize * bpp as usize;
+        let px = bytes.get(idx..idx + bpp as usize)?;
+
+        match self.format {
+            VideoFormat::RGB | VideoFormat::RGBx => Some(image::Rgba([px[0], px[1], px[2], 255])),
+            VideoFormat::RGBA => Some(image::Rgba([px[0], px[1], px[2], px[3]])),
+            VideoFormat::BGRx => Some(image::Rgba([px[2], px[1], px[0], 255])),
+            _ => unreachable!(),
+        }
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
     #[test]
     fn sample_rgba() {
         let ctx = BufferContext {
@@ -77,9 +82,14 @@ mod tests {
         let buf = vec![
             255, 0, 0, 255, 0, 255, 0, 255, 0, 0, 255, 255, 128, 128, 128, 255,
         ];
-        let img = ctx.to_rgba_image(&buf).unwrap();
-        assert_eq!(img.get_pixel(0, 0).0, [255u8, 0, 0, 255]);
-        assert_eq!(img.get_pixel(1, 1).0, [128u8, 128, 128, 255]);
+        assert_eq!(
+            ctx.sample_pixel(&buf, 0, 0),
+            Some(image::Rgba([255, 0, 0, 255]))
+        );
+        assert_eq!(
+            ctx.sample_pixel(&buf, 1, 1),
+            Some(image::Rgba([128, 128, 128, 255]))
+        );
     }
 
     #[test]
@@ -92,8 +102,10 @@ mod tests {
             format: VideoFormat::BGRx,
         };
         let buf = vec![0, 0, 255, 255, 255, 0, 0, 255];
-        let img = ctx.to_rgba_image(&buf).unwrap();
-        assert_eq!(img.get_pixel(0, 0).0, [255u8, 0, 0, 255]);
+        assert_eq!(
+            ctx.sample_pixel(&buf, 0, 0),
+            Some(image::Rgba([255, 0, 0, 255]))
+        );
     }
 
     #[test]
@@ -106,8 +118,10 @@ mod tests {
             format: VideoFormat::RGB,
         };
         let buf = vec![255, 0, 0, 0, 255, 0];
-        let img = ctx.to_rgba_image(&buf).unwrap();
-        assert_eq!(img.get_pixel(1, 0).0, [0u8, 255, 0, 255]);
+        assert_eq!(
+            ctx.sample_pixel(&buf, 1, 0),
+            Some(image::Rgba([0, 255, 0, 255]))
+        );
     }
 
     #[test]
@@ -120,7 +134,7 @@ mod tests {
             format: VideoFormat::RGBA,
         };
         let buf = vec![255; 4];
-        assert!(ctx.to_rgba_image(&buf).is_some());
+        assert!(ctx.sample_pixel(&buf, 0, 1).is_none());
     }
 
     #[test]
@@ -133,7 +147,7 @@ mod tests {
             format: VideoFormat::I420,
         };
         let buf = vec![255; 4];
-        assert!(ctx.to_rgba_image(&buf).is_none());
+        assert!(ctx.sample_pixel(&buf, 0, 0).is_none());
     }
 
     #[test]
@@ -146,8 +160,13 @@ mod tests {
             format: VideoFormat::RGBA,
         };
         let buf = vec![0, 255, 0, 255, 255, 0, 0, 255];
-        let img = ctx.to_rgba_image(&buf).unwrap();
-        assert_eq!(img.get_pixel(0, 0).0, [255u8, 0, 0, 255]);
-        assert_eq!(img.get_pixel(0, 1).0, [0u8, 255, 0, 255]);
+        assert_eq!(
+            ctx.sample_pixel(&buf, 0, 0),
+            Some(image::Rgba([255, 0, 0, 255]))
+        );
+        assert_eq!(
+            ctx.sample_pixel(&buf, 0, 1),
+            Some(image::Rgba([0, 255, 0, 255]))
+        );
     }
 }

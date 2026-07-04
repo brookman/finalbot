@@ -1,7 +1,12 @@
+//! `PipeWire` stream setup, format negotiation, and main-loop signal handling.
+//!
+//! [`start`] opens a `PipeWire` stream connected to the given screencast node
+//! and samples a single pixel on every incoming buffer.
+
 use std::os::fd::OwnedFd;
 use std::sync::OnceLock;
 
-use anyhow::{Result, anyhow};
+use anyhow::{anyhow, Result};
 use pipewire::{
     context::ContextBox,
     keys,
@@ -9,12 +14,12 @@ use pipewire::{
     properties::properties,
     spa,
     spa::param::{
-        ParamType,
         format::{FormatProperties, MediaSubtype, MediaType},
         format_utils,
         video::{VideoFormat, VideoInfoRaw},
+        ParamType,
     },
-    spa::pod::{Pod, Value, serialize::PodSerializer},
+    spa::pod::{serialize::PodSerializer, Pod, Value},
     spa::utils::Direction,
     stream::{StreamBox, StreamFlags},
 };
@@ -32,7 +37,9 @@ pub fn start(node_id: u32, fd: OwnedFd, sample_x: u32, sample_y: u32) -> Result<
 
     let main_loop = MainLoopBox::new(None)?;
     let main_loop: &'static MainLoop = Box::leak(Box::new(main_loop));
-    MAIN_LOOP.set(main_loop).ok();
+    if MAIN_LOOP.set(main_loop).is_err() {
+        eprintln!("MAIN_LOOP already set — continuing");
+    }
 
     ctrlc::set_handler(move || {
         if let Some(ml) = MAIN_LOOP.get() {
@@ -53,7 +60,7 @@ pub fn start(node_id: u32, fd: OwnedFd, sample_x: u32, sample_y: u32) -> Result<
         },
     )?;
 
-    let format_param_bytes = make_format_param_bytes()?;
+    let format_param_bytes = build_format_param_bytes()?;
     let format_param = Pod::from_bytes(&format_param_bytes)
         .ok_or_else(|| anyhow!("Could not convert bytes to Pod"))?;
 
@@ -103,8 +110,8 @@ pub fn start(node_id: u32, fd: OwnedFd, sample_x: u32, sample_y: u32) -> Result<
             let (offset, _, stride) = {
                 let chunk = data.chunk();
                 (
-                    chunk.offset() as usize,
-                    chunk.size() as usize,
+                    usize::try_from(chunk.offset()).unwrap(),
+                    usize::try_from(chunk.size()).unwrap(),
                     chunk.stride(),
                 )
             };
@@ -121,14 +128,12 @@ pub fn start(node_id: u32, fd: OwnedFd, sample_x: u32, sample_y: u32) -> Result<
                 format: user_data.format.format(),
             };
 
-            if let Some(img) = ctx.to_rgba_image(bytes) {
-                let pixel = img.get_pixel(sample_x, sample_y);
-                println!(
+            match ctx.sample_pixel(bytes, sample_x, sample_y) {
+                Some(pixel) => println!(
                     "rgba({}, {}, {}, {})",
                     pixel[0], pixel[1], pixel[2], pixel[3]
-                );
-            } else {
-                eprintln!("could not sample pixel");
+                ),
+                None => eprintln!("could not sample pixel"),
             }
         })
         .register()?;
@@ -145,7 +150,7 @@ pub fn start(node_id: u32, fd: OwnedFd, sample_x: u32, sample_y: u32) -> Result<
     Ok(())
 }
 
-fn make_format_param_bytes() -> Result<Vec<u8>> {
+fn build_format_param_bytes() -> Result<Vec<u8>> {
     let obj = spa::pod::object!(
         spa::utils::SpaTypes::ObjectParamFormat,
         ParamType::EnumFormat,
@@ -163,10 +168,7 @@ fn make_format_param_bytes() -> Result<Vec<u8>> {
             VideoFormat::RGB
         )
     );
-
-    let bytes = PodSerializer::serialize(std::io::Cursor::new(Vec::new()), &Value::Object(obj))?
-        .0
-        .into_inner();
-
-    Ok(bytes)
+    PodSerializer::serialize(std::io::Cursor::new(Vec::new()), &Value::Object(obj))
+        .map(|(cursor, _)| cursor.into_inner())
+        .map_err(Into::into)
 }

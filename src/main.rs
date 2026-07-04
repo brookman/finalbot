@@ -1,3 +1,13 @@
+//! `PipeWire` screen capture pixel sampler.
+//!
+//! Opens a screencast portal via [`portal::open_portal`], connects a `PipeWire`
+//! stream via [`pipewire::start`], and prints the RGBA value of a single
+//! pixel from every received frame.
+
+// `u32 as usize` is lossless on all real targets but clippy's
+// `cast_lossless` can't express it (no `From<u32>` impl for `usize`).
+#![allow(clippy::cast_lossless)]
+
 mod pipewire;
 mod pixel;
 mod portal;
