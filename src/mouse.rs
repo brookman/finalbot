@@ -50,21 +50,12 @@ impl Mouse {
     }
 
     pub async fn click_left(&self) -> Result<()> {
-        self.device
-            .write_events(&[KeyEvent::new(Key::BTN_LEFT, KeyState::PRESSED).into()])?;
-        self.device
-            .write_events(&[KeyEvent::new(Key::BTN_LEFT, KeyState::RELEASED).into()])?;
-        tokio::time::sleep(Duration::from_millis(SLEEP_MS * 2)).await;
+        self.press_left().await?;
+        self.release_left().await?;
         Ok(())
     }
 
-    pub async fn drag_left(
-        &self,
-        x_from: i32,
-        y_from: i32,
-        x_to: i32,
-        y_to: i32,
-    ) -> Result<()> {
+    pub async fn drag_left(&self, x_from: i32, y_from: i32, x_to: i32, y_to: i32) -> Result<()> {
         self.move_to(x_from, y_from)?;
         self.press_left().await?;
         self.move_to(x_to, y_to)?;

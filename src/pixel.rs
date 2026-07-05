@@ -19,7 +19,7 @@ pub struct BufferContext {
 
 impl BufferContext {
     /// Number of bytes per pixel for the current format.
-    fn bytes_per_pixel(&self) -> Option<u32> {
+    fn bytes_per_pixel(&self) -> Option<usize> {
         match self.format {
             VideoFormat::RGB => Some(3),
             VideoFormat::RGBA | VideoFormat::RGBx | VideoFormat::BGRx => Some(4),
@@ -28,18 +28,18 @@ impl BufferContext {
     }
 
     /// Byte stride between consecutive rows.
-    fn row_stride(&self, bpp: u32) -> u32 {
+    fn row_stride(&self, bpp: usize) -> usize {
         if self.stride == 0 {
-            self.width * bpp
+            self.width as usize * bpp
         } else {
-            self.stride.unsigned_abs()
+            self.stride.unsigned_abs() as usize
         }
     }
 
     /// Source buffer row index for logical row `y`.
     fn src_row(&self, y: u32) -> usize {
         if self.stride < 0 {
-            (self.height - 1 - y) as usize
+            self.height.saturating_sub(1).saturating_sub(y) as usize
         } else {
             y as usize
         }
@@ -52,16 +52,14 @@ impl BufferContext {
         }
 
         let bpp = self.bytes_per_pixel()?;
-        let idx = self.offset
-            + self.src_row(y) * self.row_stride(bpp) as usize
-            + x as usize * bpp as usize;
-        let px = bytes.get(idx..idx + bpp as usize)?;
+        let idx = self.offset + self.src_row(y) * self.row_stride(bpp) + x as usize * bpp;
+        let px = bytes.get(idx..idx + bpp)?;
 
         match self.format {
             VideoFormat::RGB | VideoFormat::RGBx => Some(image::Rgba([px[0], px[1], px[2], 255])),
             VideoFormat::RGBA => Some(image::Rgba([px[0], px[1], px[2], px[3]])),
             VideoFormat::BGRx => Some(image::Rgba([px[2], px[1], px[0], 255])),
-            _ => unreachable!(),
+            _ => None,
         }
     }
 }

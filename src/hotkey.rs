@@ -1,5 +1,5 @@
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 use evdev::{Device, EventType, InputEvent, KeyCode};
 use futures::StreamExt;
@@ -17,10 +17,10 @@ impl Cancel {
     }
 
     pub async fn wait(&self) {
-        if self.is_cancelled() {
-            return;
+        let notified = self.notify.notified();
+        if !self.is_cancelled() {
+            notified.await;
         }
-        self.notify.notified().await;
     }
 }
 

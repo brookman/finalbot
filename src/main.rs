@@ -30,7 +30,8 @@ const SCREEN_H: i32 = 1440;
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    let (x, y) = init(Level::INFO)?.coordinates();
+    init_tracing(Level::INFO);
+    let (x, y) = parse_args()?.coordinates();
 
     let cancel = hotkey::start();
     let mouse = Mouse::new().await?;
@@ -44,8 +45,8 @@ async fn main() -> Result<()> {
     let node_id = stream.pipe_wire_node_id();
     info!("PipeWire node id: {node_id}");
 
-    pipewire::start(node_id, fd, move |ctx: &BufferContext, bytes: &[u8]| {
-        if let Some(pixel) = ctx.sample_pixel(bytes, x, y) {
+    pipewire::start(node_id, fd, move |ctx: BufferContext, bytes: Vec<u8>| {
+        if let Some(pixel) = ctx.sample_pixel(&bytes, x, y) {
             info!(
                 "rgba({}, {}, {}, {})",
                 pixel[0], pixel[1], pixel[2], pixel[3]
@@ -75,7 +76,7 @@ async fn do_clicks(mouse: &Mouse) -> Result<()> {
     Ok(())
 }
 
-fn init(log_level: Level) -> Result<Args> {
+fn init_tracing(log_level: Level) {
     tracing_subscriber::fmt()
         .with_env_filter(
             tracing_subscriber::EnvFilter::builder()
@@ -83,6 +84,8 @@ fn init(log_level: Level) -> Result<Args> {
                 .from_env_lossy(),
         )
         .init();
+}
 
+fn parse_args() -> Result<Args> {
     Args::try_parse().context("Could not parse args")
 }
