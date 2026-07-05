@@ -19,7 +19,7 @@ use crate::args::Args;
 use anyhow::{Context, Result};
 use clap::Parser;
 use pixel::BufferContext;
-use tracing::{info, warn, Level};
+use tracing::{Level, info, warn};
 
 use std::time::Duration;
 
@@ -33,38 +33,11 @@ async fn main() -> Result<()> {
     let (x, y) = init(Level::INFO)?.coordinates();
 
     let mut cancel = hotkey::start();
-
     let mouse = Mouse::new().await?;
 
-    mouse.move_to(1700, 900)?;
-    let _ = mouse.click_left().await;
-    tokio::time::sleep(Duration::from_millis(180)).await;
-
-    if !cancel.is_cancelled() {
-        let _ = mouse.click_left().await;
-        tokio::time::sleep(Duration::from_millis(180)).await;
-    }
-
-    for _ in 0..100 {
-        if cancel.is_cancelled() {
-            info!("Auto-clicking cancelled");
-            break;
-        }
-
-        tokio::select! {
-            () = cancel.wait() => {
-                info!("Auto-clicking cancelled");
-                break;
-            }
-            result = async {
-                mouse.drag_left(1900, 550, 1900, 450).await?;
-                mouse.move_to(1700, 1000)?;
-                let _ = mouse.click_left().await;
-                Ok::<_, anyhow::Error>(())
-            } => {
-                result?;
-            }
-        }
+    tokio::select! {
+        () = cancel.wait() => info!("Auto-clicking cancelled"),
+        result = do_clicks(&mouse) => result?,
     }
 
     let (stream, fd) = portal::open_portal().await?;
@@ -81,6 +54,23 @@ async fn main() -> Result<()> {
             warn!("could not sample pixel at ({x}, {y})");
         }
     })?;
+
+    Ok(())
+}
+
+async fn do_clicks(mouse: &Mouse) -> Result<()> {
+    mouse.move_to(1700, 900)?;
+    mouse.click_left().await?;
+    tokio::time::sleep(Duration::from_millis(180)).await;
+
+    mouse.click_left().await?;
+    tokio::time::sleep(Duration::from_millis(180)).await;
+
+    for _ in 0..100 {
+        mouse.drag_left(1900, 550, 1900, 450).await?;
+        mouse.move_to(1700, 1000)?;
+        mouse.click_left().await?;
+    }
 
     Ok(())
 }
