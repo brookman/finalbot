@@ -32,7 +32,7 @@ const SCREEN_H: i32 = 1440;
 async fn main() -> Result<()> {
     let (x, y) = init(Level::INFO)?.coordinates();
 
-    let mut cancel = hotkey::start();
+    let cancel = hotkey::start();
     let mouse = Mouse::new().await?;
 
     tokio::select! {

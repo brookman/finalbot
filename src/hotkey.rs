@@ -1,23 +1,26 @@
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
+
 use evdev::{Device, EventType, InputEvent, KeyCode};
 use futures::StreamExt;
-use tokio::sync::watch;
-use tracing::info;
+use tokio::sync::Notify;
+use tracing::{info, warn};
 
 pub struct Cancel {
-    rx: watch::Receiver<bool>,
-    _tx: watch::Sender<bool>,
+    cancelled: Arc<AtomicBool>,
+    notify: Arc<Notify>,
 }
 
 impl Cancel {
     pub fn is_cancelled(&self) -> bool {
-        *self.rx.borrow()
+        self.cancelled.load(Ordering::Relaxed)
     }
 
-    pub async fn wait(&mut self) {
+    pub async fn wait(&self) {
         if self.is_cancelled() {
             return;
         }
-        let _ = self.rx.changed().await;
+        self.notify.notified().await;
     }
 }
 
@@ -28,16 +31,17 @@ fn is_escape_press(event: &InputEvent) -> bool {
 }
 
 pub fn start() -> Cancel {
-    let (tx, rx) = watch::channel(false);
+    let cancelled = Arc::new(AtomicBool::new(false));
+    let notify = Arc::new(Notify::new());
 
     let Some(devices) = find_keyboards() else {
-        eprintln!("Warning: /dev/input not found. Hotkey disabled.");
-        return Cancel { rx, _tx: tx };
+        warn!("/dev/input not found. Hotkey disabled.");
+        return Cancel { cancelled, notify };
     };
 
     if devices.is_empty() {
-        eprintln!("Warning: no keyboard devices found. Hotkey disabled.");
-        return Cancel { rx, _tx: tx };
+        warn!("no keyboard devices found. Hotkey disabled.");
+        return Cancel { cancelled, notify };
     }
 
     let streams: Vec<_> = devices
@@ -46,8 +50,8 @@ pub fn start() -> Cancel {
         .collect();
 
     if streams.is_empty() {
-        eprintln!("Warning: could not open input event streams. Hotkey disabled.");
-        return Cancel { rx, _tx: tx };
+        warn!("could not open input event streams. Hotkey disabled.");
+        return Cancel { cancelled, notify };
     }
 
     info!(
@@ -55,18 +59,20 @@ pub fn start() -> Cancel {
         streams.len()
     );
 
-    let tx_clone = tx.clone();
+    let c_cancelled = Arc::clone(&cancelled);
+    let c_notify = Arc::clone(&notify);
     tokio::spawn(async move {
         let mut merged = futures::stream::select_all(streams);
         loop {
             match merged.next().await {
                 Some(Ok(event)) if is_escape_press(&event) => {
                     info!("Escape pressed — cancelling");
-                    let _ = tx_clone.send(true);
+                    c_cancelled.store(true, Ordering::Relaxed);
+                    c_notify.notify_one();
                     break;
                 }
                 Some(Err(e)) => {
-                    tracing::warn!("input event error: {e}");
+                    warn!("input event error: {e}");
                 }
                 None => break,
                 _ => {}
@@ -74,7 +80,7 @@ pub fn start() -> Cancel {
         }
     });
 
-    Cancel { rx, _tx: tx }
+    Cancel { cancelled, notify }
 }
 
 fn find_keyboards() -> Option<Vec<Device>> {
