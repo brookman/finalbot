@@ -9,6 +9,7 @@
 #![allow(clippy::cast_lossless)]
 
 mod args;
+mod mouse;
 mod pipewire;
 mod pixel;
 mod portal;
@@ -17,10 +18,33 @@ use crate::args::Args;
 use anyhow::{Context, Result};
 use clap::Parser;
 use pixel::BufferContext;
-use tracing::{Level, info, warn};
+use tracing::{info, warn, Level};
+
+use std::time::Duration;
+
+use crate::mouse::Mouse;
+
+const SCREEN_W: i32 = 2560;
+const SCREEN_H: i32 = 1440;
 
 #[tokio::main]
 async fn main() -> Result<()> {
+    // test mouse clicking
+    let mouse = Mouse::new()?;
+
+    mouse.move_to(1700, 900)?;
+    mouse.click_left()?;
+    tokio::time::sleep(Duration::from_millis(180)).await;
+    mouse.click_left()?;
+    tokio::time::sleep(Duration::from_millis(180)).await;
+
+    for _ in 0..6000 {
+        mouse.drag_left(1900, 550, 1900, 450)?;
+        mouse.move_to(1700, 1000)?;
+        mouse.click_left()?;
+    }
+
+    // stream frames
     let (x, y) = init(Level::INFO)?.coordinates();
 
     let (stream, fd) = portal::open_portal().await?;
