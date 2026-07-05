@@ -3,17 +3,16 @@ use anyhow::Result;
 use evdevil::event::{Abs, AbsEvent, Key, KeyEvent, KeyState};
 use evdevil::uinput::{AbsSetup, UinputDevice};
 use evdevil::{AbsInfo, InputProp};
-use std::thread;
 use std::time::Duration;
 
 pub struct Mouse {
     device: UinputDevice,
 }
 
-const SLEEP: u64 = 18;
+const SLEEP_MS: u64 = 18;
 
 impl Mouse {
-    pub fn new() -> Result<Mouse> {
+    pub async fn new() -> Result<Mouse> {
         let device = UinputDevice::builder()?
             .with_props([InputProp::POINTER])?
             .with_abs_axes([
@@ -23,8 +22,7 @@ impl Mouse {
             .with_keys([Key::BTN_LEFT])?
             .build("rust-automation-pointer")?;
 
-        // Give the compositor/libinput a moment to notice the new device.
-        thread::sleep(Duration::from_millis(100));
+        tokio::time::sleep(Duration::from_millis(100)).await;
 
         Ok(Mouse { device })
     }
@@ -34,35 +32,40 @@ impl Mouse {
             AbsEvent::new(Abs::X, x).into(),
             AbsEvent::new(Abs::Y, y).into(),
         ])?;
-        //thread::sleep(Duration::from_millis(SLEEP));
         Ok(())
     }
 
-    pub fn press_left(&self) -> Result<()> {
+    pub async fn press_left(&self) -> Result<()> {
         self.device
             .write_events(&[KeyEvent::new(Key::BTN_LEFT, KeyState::PRESSED).into()])?;
-        thread::sleep(Duration::from_millis(SLEEP));
+        tokio::time::sleep(Duration::from_millis(SLEEP_MS)).await;
         Ok(())
     }
 
-    pub fn release_left(&self) -> Result<()> {
+    pub async fn release_left(&self) -> Result<()> {
         self.device
             .write_events(&[KeyEvent::new(Key::BTN_LEFT, KeyState::RELEASED).into()])?;
-        thread::sleep(Duration::from_millis(SLEEP));
+        tokio::time::sleep(Duration::from_millis(SLEEP_MS)).await;
         Ok(())
     }
 
-    pub fn click_left(&self) -> Result<()> {
-        self.press_left()?;
-        self.release_left()?;
+    pub async fn click_left(&self) -> Result<()> {
+        self.press_left().await?;
+        self.release_left().await?;
         Ok(())
     }
 
-    pub fn drag_left(&self, x_from: i32, y_from: i32, x_to: i32, y_to: i32) -> Result<()> {
+    pub async fn drag_left(
+        &self,
+        x_from: i32,
+        y_from: i32,
+        x_to: i32,
+        y_to: i32,
+    ) -> Result<()> {
         self.move_to(x_from, y_from)?;
-        self.press_left()?;
+        self.press_left().await?;
         self.move_to(x_to, y_to)?;
-        self.release_left()?;
+        self.release_left().await?;
         Ok(())
     }
 }

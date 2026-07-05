@@ -1,85 +1,91 @@
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::thread;
-use std::time::Duration;
+use evdev::{Device, EventType, InputEvent, KeyCode};
+use futures::StreamExt;
+use tokio::sync::watch;
+use tracing::info;
 
-use evdev::{Device, EventType, KeyCode};
-
-static CANCELLED: AtomicBool = AtomicBool::new(false);
-
-pub fn is_cancelled() -> bool {
-    CANCELLED.load(Ordering::Relaxed)
+pub struct Cancel {
+    rx: watch::Receiver<bool>,
+    _tx: watch::Sender<bool>,
 }
 
-fn first_event_device() -> Option<std::path::PathBuf> {
-    let dir = std::fs::read_dir("/dev/input").ok()?;
-    dir.filter_map(Result::ok).find_map(|e| {
-        let p = e.path();
-        p.to_string_lossy().contains("event").then_some(p)
-    })
+impl Cancel {
+    pub fn is_cancelled(&self) -> bool {
+        *self.rx.borrow()
+    }
+
+    pub async fn wait(&mut self) {
+        if self.is_cancelled() {
+            return;
+        }
+        let _ = self.rx.changed().await;
+    }
 }
 
-fn open_keyboard_devices() -> Vec<Device> {
-    let Ok(dir) = std::fs::read_dir("/dev/input") else {
-        return vec![];
+fn is_escape_press(event: &InputEvent) -> bool {
+    event.event_type() == EventType::KEY
+        && event.code() == KeyCode::KEY_ESC.code()
+        && event.value() == 1
+}
+
+pub fn start() -> Cancel {
+    let (tx, rx) = watch::channel(false);
+
+    let Some(devices) = find_keyboards() else {
+        eprintln!("Warning: /dev/input not found. Hotkey disabled.");
+        return Cancel { rx, _tx: tx };
     };
 
-    dir.filter_map(|entry| {
-        let path = entry.ok()?.path();
-        let device = Device::open(&path).ok()?;
-        device.set_nonblocking(true).ok()?;
-        let keys = device.supported_keys()?;
-        keys.contains(KeyCode::KEY_ESC).then_some(device)
-    })
-    .collect()
-}
+    if devices.is_empty() {
+        eprintln!("Warning: no keyboard devices found. Hotkey disabled.");
+        return Cancel { rx, _tx: tx };
+    }
 
-pub fn start() {
-    thread::spawn(|| {
-        let probe = first_event_device();
-        let accessible = probe.is_some_and(|p| Device::open(&p).is_ok());
+    let streams: Vec<_> = devices
+        .into_iter()
+        .filter_map(|d| d.into_event_stream().ok())
+        .collect();
 
-        if !accessible {
-            eprintln!(
-                "Warning: cannot read /dev/input/event* (Permission denied). \
-                 Hotkey cancellation disabled.\n\
-                 Hint: add yourself to the 'input' group or run as root:\n  \
-                   sudo usermod -aG input $USER   # then log out and back in"
-            );
-            return;
-        }
+    if streams.is_empty() {
+        eprintln!("Warning: could not open input event streams. Hotkey disabled.");
+        return Cancel { rx, _tx: tx };
+    }
 
-        let mut devices = open_keyboard_devices();
+    info!(
+        "Hotkey active — press Escape to cancel ({} device(s))",
+        streams.len()
+    );
 
-        if devices.is_empty() {
-            eprintln!(
-                "Warning: no keyboard devices found for hotkey listener. \
-                 Auto-clicking cannot be cancelled with Escape."
-            );
-            return;
-        }
-
-        eprintln!(
-            "[finalbot] Hotkey listener active — press Escape to cancel auto-clicking \
-             ({} device(s))",
-            devices.len()
-        );
-
+    let tx_clone = tx.clone();
+    tokio::spawn(async move {
+        let mut merged = futures::stream::select_all(streams);
         loop {
-            for device in &mut devices {
-                let Ok(events) = device.fetch_events() else {
-                    continue;
-                };
-                for event in events {
-                    if event.event_type() == EventType::KEY
-                        && event.code() == KeyCode::KEY_ESC.code()
-                        && event.value() == 1
-                    {
-                        CANCELLED.store(true, Ordering::Relaxed);
-                        eprintln!("[finalbot] Escape pressed — cancelling auto-clicking");
-                    }
+            match merged.next().await {
+                Some(Ok(event)) if is_escape_press(&event) => {
+                    info!("Escape pressed — cancelling");
+                    let _ = tx_clone.send(true);
+                    break;
                 }
+                Some(Err(e)) => {
+                    tracing::warn!("input event error: {e}");
+                }
+                None => break,
+                _ => {}
             }
-            thread::sleep(Duration::from_millis(50));
         }
     });
+
+    Cancel { rx, _tx: tx }
+}
+
+fn find_keyboards() -> Option<Vec<Device>> {
+    let dir = std::fs::read_dir("/dev/input").ok()?;
+    Some(
+        dir.filter_map(|entry| {
+            let path = entry.ok()?.path();
+            let device = Device::open(&path).ok()?;
+            let keys = device.supported_keys()?;
+            keys.contains(KeyCode::KEY_ESC).then_some(device)
+        })
+        .collect(),
+    )
 }

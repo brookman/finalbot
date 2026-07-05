@@ -30,29 +30,42 @@ const SCREEN_H: i32 = 1440;
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    hotkey::start();
+    let (x, y) = init(Level::INFO)?.coordinates();
 
-    // test mouse clicking
-    let mouse = Mouse::new()?;
+    let mut cancel = hotkey::start();
+
+    let mouse = Mouse::new().await?;
 
     mouse.move_to(1700, 900)?;
-    mouse.click_left()?;
-    tokio::time::sleep(Duration::from_millis(180)).await;
-    mouse.click_left()?;
+    let _ = mouse.click_left().await;
     tokio::time::sleep(Duration::from_millis(180)).await;
 
+    if !cancel.is_cancelled() {
+        let _ = mouse.click_left().await;
+        tokio::time::sleep(Duration::from_millis(180)).await;
+    }
+
     for _ in 0..100 {
-        if hotkey::is_cancelled() {
+        if cancel.is_cancelled() {
             info!("Auto-clicking cancelled");
             break;
         }
-        mouse.drag_left(1900, 550, 1900, 450)?;
-        mouse.move_to(1700, 1000)?;
-        mouse.click_left()?;
-    }
 
-    // stream frames
-    let (x, y) = init(Level::INFO)?.coordinates();
+        tokio::select! {
+            () = cancel.wait() => {
+                info!("Auto-clicking cancelled");
+                break;
+            }
+            result = async {
+                mouse.drag_left(1900, 550, 1900, 450).await?;
+                mouse.move_to(1700, 1000)?;
+                let _ = mouse.click_left().await;
+                Ok::<_, anyhow::Error>(())
+            } => {
+                result?;
+            }
+        }
+    }
 
     let (stream, fd) = portal::open_portal().await?;
     let node_id = stream.pipe_wire_node_id();

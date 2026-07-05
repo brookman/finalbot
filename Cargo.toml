@@ -29,9 +29,9 @@ ashpd = { version = "0.13", features = ["screencast", "pipewire"] }
 ctrlc = "3"
 image = "0.25"
 pipewire = "0.9"
-tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "sync", "time"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 evdevil = "0.5.0"
-evdev = "0.13"
-log = "0.4.33"
+evdev = { version = "0.13", features = ["tokio", "stream-trait"] }
+futures = "0.3"
