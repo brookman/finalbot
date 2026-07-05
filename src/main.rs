@@ -9,6 +9,7 @@
 #![allow(clippy::cast_lossless)]
 
 mod args;
+mod hotkey;
 mod mouse;
 mod pipewire;
 mod pixel;
@@ -29,6 +30,8 @@ const SCREEN_H: i32 = 1440;
 
 #[tokio::main]
 async fn main() -> Result<()> {
+    hotkey::start();
+
     // test mouse clicking
     let mouse = Mouse::new()?;
 
@@ -38,7 +41,11 @@ async fn main() -> Result<()> {
     mouse.click_left()?;
     tokio::time::sleep(Duration::from_millis(180)).await;
 
-    for _ in 0..6000 {
+    for _ in 0..100 {
+        if hotkey::is_cancelled() {
+            info!("Auto-clicking cancelled");
+            break;
+        }
         mouse.drag_left(1900, 550, 1900, 450)?;
         mouse.move_to(1700, 1000)?;
         mouse.click_left()?;
